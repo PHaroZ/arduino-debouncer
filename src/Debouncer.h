@@ -27,6 +27,13 @@ public:
 
   inline boolean state(int index) { return this->lastState(index); }
 
+  void begin(bool initialState) {
+    for (uint16_t index = 0; index < dataWidth; index++) {
+      bitWrite(this->lastStates, index, initialState);
+    }
+    this->lastRawStates = this->lastStates;
+  }
+
   bool debounce(ShiftType states) {
     uint16_t now = millis();
     uint8_t state;
