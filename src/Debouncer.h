@@ -3,18 +3,18 @@
 
 #include "Arduino.h"
 
-template <byte dataWidth, typename ShiftType>
+template <uint8_t dataWidth, typename ShiftType>
 class _Debouncer  {
 private:
   uint8_t debounceTime;
   ShiftType lastRawStates;
-  uint16_t nextRawTimes[dataWidth];
+  uint16_t lastRawTimes[dataWidth];
   ShiftType lastStates;
-  inline boolean lastState(int index) { return bitRead(this->lastStates, index); }
+  inline bool lastState(int index) { return bitRead(this->lastStates, index); }
 
-  inline boolean lastRawState(int index) { return bitRead(this->lastRawStates, index); }
+  inline bool lastRawState(int index) { return bitRead(this->lastRawStates, index); }
 
-  inline boolean nextRawTime(int index) { return this->nextRawTimes[index]; }
+  inline bool lastRawTime(int index) { return this->lastRawTimes[index]; }
 
 public:
   _Debouncer() : debounceTime(30) { }
@@ -28,31 +28,38 @@ public:
   inline boolean state(int index) { return this->lastState(index); }
 
   void begin(bool initialState) {
-    for (uint16_t index = 0; index < dataWidth; index++) {
+    for (uint8_t index = 0; index < dataWidth; index++) {
       bitWrite(this->lastStates, index, initialState);
     }
     this->lastRawStates = this->lastStates;
   }
 
   bool debounce(ShiftType states) {
+    // greatly improse speed when nothing has changed
+    if (states == this->lastRawStates && states == this->lastStates) {
+      return false;
+    }
+
     uint16_t now = millis();
-    uint8_t state;
+    bool state;
     bool changed = false;
 
-    for (uint16_t index = 0; index < dataWidth; index++) {
+    for (uint8_t index = 0; index < dataWidth; index++) {
       state = bitRead(states, index);
-      if (state != this->lastState(index)) {
-        // don't read too quickly ->
-        if (now > this->nextRawTime(index)) {
-          // new state should be equals to previous read to be considered as valid ->
-          if (this->lastRawState(index) == state) {
-            // state as really change, save it ->
+      if (state != this->lastRawState(index)) {
+        this->lastRawTimes[index] = now;
+        bitWrite(this->lastRawStates, index, state);
+      } else {
+        // new state is equals to last read
+        // is it different to last real state ?
+        if (state != this->lastState(index)) {
+          // yes, but rawState is it stabilized ?
+          if (now - this->lastRawTime(index) >= this->debounceTime) {
+            // yes ! so we can consider state as really changed
             bitWrite(this->lastStates, index, state);
             changed = true;
           }
-          this->nextRawTimes[index] = now + this->debounceTime;
         }
-        bitWrite(this->lastRawStates, index, state);
       }
     }
 
