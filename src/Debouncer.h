@@ -23,7 +23,7 @@ public:
 
   inline ShiftType read() { return this->lastStates; }
 
-  inline uint16_t getDataWidth() { return dataWidth; }
+  inline uint8_t getDataWidth() { return dataWidth; }
 
   inline boolean state(int index) { return this->lastState(index); }
 
