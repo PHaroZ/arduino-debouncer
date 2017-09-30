@@ -27,14 +27,12 @@ public:
 
   inline boolean state(int index) { return this->lastState(index); }
 
-  void begin(bool initialState) {
-    for (uint8_t index = 0; index < dataWidth; index++) {
-      bitWrite(this->lastStates, index, initialState);
-    }
+  void begin(ShiftType initialState) {
+    this->lastStates    = initialState;
     this->lastRawStates = this->lastStates;
   }
 
-  bool debounce(ShiftType states) {
+  bool debounce(ShiftType &states) {
     // greatly improse speed when nothing has changed
     if (states == this->lastRawStates && states == this->lastStates) {
       return false;
