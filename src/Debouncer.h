@@ -3,18 +3,36 @@
 
 #include "Arduino.h"
 
-template <uint8_t dataWidth, typename ShiftType>
+// #define DEBOUNCER_CPU_OPTIMIZATION
+
+namespace {
+// data time for time comparision
+// should be uint32_t but we don't need these capacity, range of 65536ms is sufficient
+#ifdef DEBOUNCER_CPU_OPTIMIZATION
+using TimeType = uint32_t;
+#else
+using TimeType = uint8_t;
+#endif
+}
+
+template <size_t dataWidth, typename ShiftType>
 class _Debouncer  {
 private:
+  // number of ms during which a switch must have the same state to be considered as stabilized
+  // should be, at max, half of capacity of TimeType
   uint8_t debounceTime;
+  // last read states, not debounced
   ShiftType lastRawStates;
-  uint16_t lastRawTimes[dataWidth];
+  // last states, debounced
   ShiftType lastStates;
+  TimeType lastRawTimes[dataWidth];
+  bool resetTimeFlag = 0;
+  // a half of TimeType capacity
+  const TimeType timeTypeHalfValue = ((TimeType) (~TimeType(0))) / 2;
+
   inline bool lastState(int index) { return bitRead(this->lastStates, index); }
 
   inline bool lastRawState(int index) { return bitRead(this->lastRawStates, index); }
-
-  inline bool lastRawTime(int index) { return this->lastRawTimes[index]; }
 
 public:
   _Debouncer() : debounceTime(30) { }
@@ -33,26 +51,52 @@ public:
   }
 
   bool debounce(ShiftType &states) {
-    // greatly improse speed when nothing has changed
+    #ifndef DEBOUNCER_CPU_OPTIMIZATION
+    TimeType now = millis();
+
+    {
+      // manage case when millis() overflow capacity of TimeType
+      // state which are older than [a half of TimeType capacity] should be shifted of [a half of TimeType capacity] to avoid false debounce detection
+      bool inFirstRange = now < this->timeTypeHalfValue;
+
+      if (inFirstRange == this->resetTimeFlag) {
+        TimeType resetLimit = now - this->debounceTime;
+        for (size_t index = 0; index < dataWidth; index++) {
+          if (inFirstRange ? (this->lastRawTimes[index] <=
+              resetLimit) : ((TimeType) (now - this->lastRawTimes[index]) >
+              this->debounceTime))
+          {
+            this->lastRawTimes[index] = resetLimit;
+          }
+        }
+        this->resetTimeFlag = !inFirstRange;
+      }
+    }
+    #endif // ifndef DEBOUNCER_CPU_OPTIMIZATION
+
+    // greatly improve speed when nothing has changed
     if (states == this->lastRawStates && states == this->lastStates) {
       return false;
     }
 
-    uint16_t now = millis();
+    #ifdef DEBOUNCER_CPU_OPTIMIZATION
+    TimeType now = millis();
+    #endif
+
     bool state;
     bool changed = false;
 
-    for (uint8_t index = 0; index < dataWidth; index++) {
+    for (size_t index = 0; index < dataWidth; index++) {
       state = bitRead(states, index);
       if (state != this->lastRawState(index)) {
         this->lastRawTimes[index] = now;
         bitWrite(this->lastRawStates, index, state);
       } else {
         // new state is equals to last read
-        // is it different to last real state ?
+        // is it different to last real/debounced state ?
         if (state != this->lastState(index)) {
           // yes, but rawState is it stabilized ?
-          if (now - this->lastRawTime(index) >= this->debounceTime) {
+          if ((TimeType) (now - this->lastRawTimes[index]) >= this->debounceTime) {
             // yes ! so we can consider state as really changed
             bitWrite(this->lastStates, index, state);
             changed = true;
@@ -62,11 +106,11 @@ public:
     }
 
     return changed;
-  }
+  } // debounce
 };
 
 // fallback with 64 bit state (up to 8 shift registers)
-template <byte dataWidth>
+template <size_t dataWidth>
 class Debouncer : public _Debouncer<dataWidth, uint64_t> { };
 // single shift register (8 bit state)
 template <>
